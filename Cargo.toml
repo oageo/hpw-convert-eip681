@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["core", "wasm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/oageo/hpw-convert-eip681"
+authors = ["Osumi Akari"]
