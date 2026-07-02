@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+readme.workspace = true
 description = "Unofficial, unaffiliated parser that converts HashPort Wallet JPYC payment links into EIP-681 (ERC-681) payment URIs. Not endorsed by or affiliated with HashPort."
 keywords = ["ethereum", "eip681", "jpyc", "polygon", "wallet"]
 categories = ["parser-implementations"]
