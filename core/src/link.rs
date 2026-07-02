@@ -1,0 +1,70 @@
+use alloy_primitives::{Address, U256};
+
+use crate::constants;
+use crate::currency::Currency;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChainId(pub u64);
+
+impl ChainId {
+    pub const POLYGON: ChainId = ChainId(constants::POLYGON_CHAIN_ID);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedLink {
+    pub to: Address,
+    pub currency: Currency,
+    pub chain_id: ChainId,
+    /// 最小単位（10^decimals倍済み）の金額。URL側の16進 `amount` を
+    /// デコードしたもの。`amount` パラメータ自体が省略されている元URLも
+    /// あるため、`None` はパラメータが存在しなかったことを表す。
+    pub amount: Option<U256>,
+    /// `to_name` の生の（非検証・非加工の）表示ラベル。パラメータが
+    /// 全く存在しない場合のみ `None`。存在するが空文字の場合は
+    /// `Some(String::new())`。
+    pub to_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AddressAmount {
+    pub address: Address,
+    pub amount: Option<U256>,
+}
+
+impl ParsedLink {
+    /// EIP-681（ERC-681）形式の決済URIを生成する。`U256` の `Display` は
+    /// 10進表記であり、これはERC-681仕様が `uint256=` の値として要求する
+    /// 形式そのものである（URL側の `amount` は16進で符号化されているが、
+    /// ここでは10進に変換して出力する）。金額が省略されている場合は
+    /// `uint256=` パラメータ自体を省略する（EIP-681は金額未指定の
+    /// リクエストを許容しており、ウォレット側でユーザーに入力させる想定）。
+    pub fn to_eip681(&self) -> String {
+        let contract = self.currency.contract_address();
+        let chain_id = self.chain_id.0;
+        match self.amount {
+            Some(amount) => format!(
+                "ethereum:{contract}@{chain_id}/transfer?address={}&uint256={amount}",
+                self.to
+            ),
+            None => format!(
+                "ethereum:{contract}@{chain_id}/transfer?address={}",
+                self.to
+            ),
+        }
+    }
+
+    pub fn address(&self) -> Address {
+        self.to
+    }
+
+    pub fn amount(&self) -> Option<U256> {
+        self.amount
+    }
+
+    pub fn address_amount(&self) -> AddressAmount {
+        AddressAmount {
+            address: self.to,
+            amount: self.amount,
+        }
+    }
+}
