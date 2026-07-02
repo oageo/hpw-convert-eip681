@@ -1,6 +1,11 @@
 # hpw-convert-eip681
+![Crates.io Version](https://img.shields.io/crates/v/hpw-convert-eip681)
+![Crates.io Downloads (latest version)](https://img.shields.io/crates/dv/hpw-convert-eip681)
+![NPM Version](https://img.shields.io/npm/v/hpw-convert-eip681)
+![NPM Downloads](https://img.shields.io/npm/dy/hpw-convert-eip681)
+![GitHub License](https://img.shields.io/github/license/oageo/hpw-convert-eip681)
 
-日本におけるとある中央集権的なステーブルコイン決済QRコード（HashPort Wallet形式の決済リンク）のURLを解析し、EIP-681（ERC-681）形式の支払いURIや送金先アドレス・金額に変換するRust製ライブラリです。WebAssembly版（npm）も同梱しています。
+日本におけるとある中央集権的なステーブルコイン決済QRコード（HashPort Wallet形式の決済リンク）のURLを解析し、EIP-681（ERC-681）形式の支払いURIや送金先アドレス・金額に変換する[Rust製ライブラリ](https://crates.io/crates/hpw-convert-eip681)です。[WebAssembly版（npm）](https://www.npmjs.com/package/hpw-convert-eip681)も同梱しています。
 
 ## 免責事項 / 非公式ツールについて
 

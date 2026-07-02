@@ -6,8 +6,10 @@
 // npmパッケージとしては `hpw-convert-eip681` として公開したいため、
 // wasm-pack が自動生成した `pkg/package.json` のnameフィールドと
 // descriptionを書き換える。また、wasm-packは `license = "MIT"`
-// （SPDX識別子）からはLICENSEファイルをコピーしないため、リポジトリ
-// ルートのLICENSEを `pkg/` にも同梱する。
+// （SPDX識別子）からはLICENSEファイルをコピーせず、READMEも
+// `wasm/README.md`（クレート直下）にしか対応していないため、
+// リポジトリルートのLICENSE/README.mdをどちらも `pkg/` に同梱する
+// （npmのパッケージページにREADMEを表示させるため）。
 //
 // 実行方法: node scripts/finalize-package.mjs   (`wasm/` ディレクトリから)
 import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
@@ -27,9 +29,10 @@ pkgJson.repository = {
   type: "git",
   url: "git+https://github.com/oageo/hpw-convert-eip681.git",
 };
-pkgJson.files = [...(pkgJson.files ?? []), "LICENSE"];
+pkgJson.files = [...(pkgJson.files ?? []), "LICENSE", "README.md"];
 
 writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
 copyFileSync(join(wasmDir, "..", "LICENSE"), join(pkgDir, "LICENSE"));
+copyFileSync(join(wasmDir, "..", "README.md"), join(pkgDir, "README.md"));
 
-console.log(`updated ${pkgJsonPath} and copied LICENSE into ${pkgDir}`);
+console.log(`updated ${pkgJsonPath} and copied LICENSE/README.md into ${pkgDir}`);
