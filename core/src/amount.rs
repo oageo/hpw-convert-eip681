@@ -19,6 +19,10 @@ pub fn parse_amount_hex(raw: &str) -> Result<U256, ParseError> {
         .or_else(|| raw.strip_prefix("0X"))
         .unwrap_or(raw);
 
+    // この空文字チェックは必須である（単なるエラーメッセージ改善ではない）。
+    // ruintの `from_str_radix` は空文字列に対してエラーではなく `Ok(0)` を
+    // 返すため、このチェックがないと `amount=` や `amount=0x` が静かに
+    // 金額0として解釈されてしまう。
     if trimmed.is_empty() {
         return Err(ParseError::InvalidAmount {
             value: raw.to_string(),

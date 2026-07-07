@@ -238,6 +238,20 @@ fn empty_amount() {
 }
 
 #[test]
+fn bare_0x_prefix_amount_is_rejected() {
+    // `amount=0x` のようにプレフィックスのみで16進数字が続かない場合も
+    // エラーとする。ruintの `from_str_radix` は空文字列を `Ok(0)` として
+    // 受理してしまうため、金額0への静かな化けを防ぐ回帰テスト。
+    let link = url(&format!(
+        "to={CHECKSUM_ADDR}&master_currency_id=487&amount=0x"
+    ));
+    assert!(matches!(
+        parse(&link),
+        Err(ParseError::InvalidAmount { .. })
+    ));
+}
+
+#[test]
 fn amount_larger_than_u128_is_decoded_correctly() {
     // 34桁の16進数（128ビット超）。u128::MAXを大きく超えるが切り捨てられ
     // てはならない。

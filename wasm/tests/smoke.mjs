@@ -2,10 +2,13 @@
 // `wasm-pack build --target nodejs --out-dir pkg-node --out-name
 // hpw_convert_eip681 ...` でビルドしたものに対して実行する。
 //
-// 実行方法: node tests/smoke.mjs （`wasm/` ディレクトリから実行する）
+// 実行方法: node wasm/tests/smoke.mjs
+// （importはこのファイルからの相対パスで解決されるため、どのディレクトリ
+//   から実行しても動く）
 import assert from "node:assert/strict";
 import {
   isSupported,
+  isValidChecksum,
   parseHashportLink,
 } from "../pkg-node/hpw_convert_eip681.js";
 
@@ -39,6 +42,18 @@ assert.equal(
   "toEip681() should omit uint256= when amount is absent"
 );
 
+// isValidChecksum（EIP-55チェックサム検証、throwしない述語関数）
+assert.equal(
+  isValidChecksum("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"),
+  true,
+  "isValidChecksum should accept a correctly checksummed address"
+);
+assert.equal(
+  isValidChecksum("0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed"),
+  false,
+  "isValidChecksum should reject an address with a wrong checksum"
+);
+
 // parseHashportLink の異常系
 let threw = false;
 try {
@@ -46,6 +61,7 @@ try {
 } catch (err) {
   threw = true;
   assert.equal(err.kind, "UnsupportedHost", "thrown error should carry kind = UnsupportedHost");
+  assert.equal(err.host, "evil.example.com", "thrown error should carry the offending host");
 }
 assert.equal(threw, true, "parseHashportLink should throw for an unsupported host");
 

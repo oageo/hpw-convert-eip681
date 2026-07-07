@@ -29,7 +29,8 @@ pkgJson.repository = {
   type: "git",
   url: "git+https://github.com/oageo/hpw-convert-eip681.git",
 };
-pkgJson.files = [...(pkgJson.files ?? []), "LICENSE", "README.md"];
+// Setで重複排除し、スクリプトを2回実行しても files が重複しないようにする
+pkgJson.files = [...new Set([...(pkgJson.files ?? []), "LICENSE", "README.md"])];
 
 writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
 copyFileSync(join(wasmDir, "..", "LICENSE"), join(pkgDir, "LICENSE"));

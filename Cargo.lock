@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "hpw-convert-eip681"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-primitives",
  "serde",
@@ -891,11 +891,10 @@ dependencies = [
 
 [[package]]
 name = "hpw-convert-eip681-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "console_error_panic_hook",
  "hpw-convert-eip681",
- "serde",
  "serde-wasm-bindgen",
  "wasm-bindgen",
 ]

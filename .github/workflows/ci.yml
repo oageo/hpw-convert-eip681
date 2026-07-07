@@ -31,5 +31,7 @@ jobs:
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
 
-      - name: Build wasm package (compile check)
-        run: wasm-pack build wasm --target bundler
+      - name: Build wasm package and run smoke test
+        run: |
+          wasm-pack build wasm --target nodejs --out-dir pkg-node --out-name hpw_convert_eip681
+          node wasm/tests/smoke.mjs
