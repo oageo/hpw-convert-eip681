@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use alloy_primitives::{Address, U256};
 
 use crate::constants;
@@ -41,16 +43,15 @@ impl ParsedLink {
     pub fn to_eip681(&self) -> String {
         let contract = self.currency.contract_address();
         let chain_id = self.chain_id.0;
-        match self.amount {
-            Some(amount) => format!(
-                "ethereum:{contract}@{chain_id}/transfer?address={}&uint256={amount}",
-                self.to
-            ),
-            None => format!(
-                "ethereum:{contract}@{chain_id}/transfer?address={}",
-                self.to
-            ),
+        let mut uri = format!(
+            "ethereum:{contract}@{chain_id}/transfer?address={}",
+            self.to
+        );
+        if let Some(amount) = self.amount {
+            // `String` への `write!` は失敗しない。
+            let _ = write!(uri, "&uint256={amount}");
         }
+        uri
     }
 
     pub fn address(&self) -> Address {

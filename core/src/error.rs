@@ -1,7 +1,12 @@
 use thiserror::Error;
 
+// `Deserialize` は意図的に導出しない。`MissingParam` の `&'static str`
+// フィールドはデシリアライザが `'static` な借用データを返せる場合にしか
+// 復元できず（例: serde_jsonで `String` からのデシリアライズは実行時
+// エラーになる）、実質的な罠になるため。ワークスペース内の用途も
+// エラーをJS側へ投げるためのシリアライズのみである。
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(tag = "kind"))]
 pub enum ParseError {
     #[error("could not parse as a URL: {message}")]

@@ -34,6 +34,9 @@ pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
     let mut currency_raw = None;
     let mut amount_raw = None;
     let mut to_name = None;
+    // 同名のクエリパラメータが重複する場合（例: `to=X&to=Y`）は後勝ちと
+    // なる。URL全体がユーザーに見えるものであり、エラーにするほどの
+    // 攻撃面ではないため、意図的にこの挙動のままとしている。
     for (k, v) in url.query_pairs() {
         match k.as_ref() {
             "to" => to_raw = Some(v.into_owned()),

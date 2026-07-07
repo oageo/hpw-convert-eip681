@@ -88,7 +88,11 @@ impl From<core_lib::ParsedLink> for ParsedLink {
             to: p.to.to_string(),
             amount: p.amount.map(|a| a.to_string()),
             amount_hex: p.amount.map(|a| format!("{a:#x}")),
-            chain_id: p.chain_id.0 as u32,
+            // チェーンIDはu32を超えうる（巨大なIDを使うEVMチェーンが存在する）。
+            // `as` による黙った切り捨てではなく、収まらない場合は大きな音を
+            // 立てて失敗させる。現状はPolygon(137)のみなので到達しない。
+            chain_id: u32::try_from(p.chain_id.0)
+                .expect("chain id exceeds u32 — widen the JS-facing chainId type"),
             currency_symbol: p.currency.symbol().to_string(),
             currency_contract: p.currency.contract_address().to_string(),
             to_name: p.to_name,
