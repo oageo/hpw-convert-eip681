@@ -16,6 +16,9 @@
 //!   実装を通して構築する。
 //! - `amount` は元URLに存在しないことがあるため `Option<U256>`。JS側では
 //!   その場合 `amount`/`amountHex` ともに `undefined` になる。
+//! - `linkType`（元URLの `type` パラメータ、例: `"dynamic"`）は `toName`
+//!   と同様、解釈を加えず生の文字列のまま公開する。取りうる値の全体像が
+//!   未確認のため、bool等へは決め打ちしない。
 
 use hpw_convert_eip681 as core_lib;
 use wasm_bindgen::prelude::*;
@@ -35,6 +38,7 @@ pub struct ParsedLink {
     currency_symbol: String,
     currency_contract: String, // チェックサム表記
     to_name: Option<String>,
+    link_type: Option<String>,
     eip681: String, // 構築時に計算済み
 }
 
@@ -75,6 +79,11 @@ impl ParsedLink {
         self.to_name.clone()
     }
 
+    #[wasm_bindgen(getter, js_name = linkType)]
+    pub fn link_type(&self) -> Option<String> {
+        self.link_type.clone()
+    }
+
     #[wasm_bindgen(js_name = toEip681)]
     pub fn to_eip681(&self) -> String {
         self.eip681.clone()
@@ -96,6 +105,7 @@ impl From<core_lib::ParsedLink> for ParsedLink {
             currency_symbol: p.currency.symbol().to_string(),
             currency_contract: p.currency.contract_address().to_string(),
             to_name: p.to_name,
+            link_type: p.link_type,
             eip681,
         }
     }

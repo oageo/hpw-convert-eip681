@@ -100,6 +100,33 @@ fn unknown_query_param_is_ignored() {
 }
 
 #[test]
+fn type_dynamic_param_is_captured_as_link_type() {
+    // HashPort Wallet側の仕様変更で、URL末尾に `type=dynamic` が付与される
+    // ようになった。`to_name` と同様に、解釈を加えず生の値をそのまま
+    // `link_type` に保持する（取りうる値の全体像が未確認のため、bool等に
+    // 決め打ちしない）。
+    let link = url(&format!(
+        "to={CHECKSUM_ADDR}&master_currency_id=487&amount=0x{ONE_TOKEN_HEX}&to_name=Cafe&type=dynamic"
+    ));
+    let parsed = parse(&link).expect("should parse");
+    assert_eq!(parsed.to.to_string(), CHECKSUM_ADDR);
+    assert_eq!(
+        parsed.amount,
+        Some(U256::from_str_radix(ONE_TOKEN_HEX, 16).unwrap())
+    );
+    assert_eq!(parsed.link_type.as_deref(), Some("dynamic"));
+}
+
+#[test]
+fn link_type_absent_is_none() {
+    let link = url(&format!(
+        "to={CHECKSUM_ADDR}&master_currency_id=487&amount=0x{ONE_TOKEN_HEX}"
+    ));
+    let parsed = parse(&link).expect("should parse");
+    assert_eq!(parsed.link_type, None);
+}
+
+#[test]
 fn uppercase_host_is_accepted_case_insensitively() {
     let link = format!(
         "https://LINK.EXPO2025-WALLET.COM/pay?to={CHECKSUM_ADDR}&master_currency_id=487&amount=0x{ONE_TOKEN_HEX}"
