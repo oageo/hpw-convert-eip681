@@ -25,6 +25,12 @@ pub struct ParsedLink {
     /// 全く存在しない場合のみ `None`。存在するが空文字の場合は
     /// `Some(String::new())`。
     pub to_name: Option<String>,
+    /// `type` クエリパラメータの生の（非検証・非加工の）値（例:
+    /// `"dynamic"`）。HashPort Wallet側の仕様変更で付与されるように
+    /// なったものだが、取りうる値の全体像が未確認のため `to_name` と
+    /// 同様に解釈を加えず生の文字列のまま保持する。`None` はパラメータが
+    /// 全く存在しなかったことを表す。
+    pub link_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

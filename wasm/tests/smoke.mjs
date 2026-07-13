@@ -13,7 +13,7 @@ import {
 } from "../pkg-node/hpw_convert_eip681.js";
 
 const VALID_LINK =
-  "https://link.expo2025-wallet.com/pay?to=0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed&master_currency_id=487&amount=0xde0b6b3a7640000&to_name=Cafe";
+  "https://link.expo2025-wallet.com/pay?to=0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed&master_currency_id=487&amount=0xde0b6b3a7640000&to_name=Cafe&type=dynamic";
 
 // isSupported
 assert.equal(isSupported(VALID_LINK), true, "isSupported should accept a valid HashPort link");
@@ -23,6 +23,7 @@ assert.equal(isSupported("not a url"), false, "isSupported should reject garbage
 const parsed = parseHashportLink(VALID_LINK);
 assert.equal(parsed.amount, "1000000000000000000", "amount should be a decimal string");
 assert.equal(parsed.to, "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", "to should be EIP-55 checksummed");
+assert.equal(parsed.linkType, "dynamic", "linkType should carry the raw `type` query value");
 assert.equal(
   parsed.toEip681(),
   "ethereum:0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29@137/transfer?address=0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed&uint256=1000000000000000000",
@@ -36,6 +37,7 @@ const withoutAmount = parseHashportLink(
 );
 assert.equal(withoutAmount.amount, undefined, "amount should be undefined when the param is absent");
 assert.equal(withoutAmount.amountHex, undefined, "amountHex should be undefined when the param is absent");
+assert.equal(withoutAmount.linkType, undefined, "linkType should be undefined when the `type` param is absent");
 assert.equal(
   withoutAmount.toEip681(),
   "ethereum:0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29@137/transfer?address=0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",

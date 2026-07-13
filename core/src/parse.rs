@@ -34,6 +34,7 @@ pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
     let mut currency_raw = None;
     let mut amount_raw = None;
     let mut to_name = None;
+    let mut link_type = None;
     // 同名のクエリパラメータが重複する場合（例: `to=X&to=Y`）は後勝ちと
     // なる。URL全体がユーザーに見えるものであり、エラーにするほどの
     // 攻撃面ではないため、意図的にこの挙動のままとしている。
@@ -43,6 +44,7 @@ pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
             "master_currency_id" => currency_raw = Some(v.into_owned()),
             "amount" => amount_raw = Some(v.into_owned()),
             "to_name" => to_name = Some(v.into_owned()),
+            "type" => link_type = Some(v.into_owned()),
             _ => {}
         }
     }
@@ -66,5 +68,6 @@ pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
         chain_id: ChainId::POLYGON,
         amount,
         to_name,
+        link_type,
     })
 }

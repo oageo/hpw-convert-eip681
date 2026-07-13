@@ -27,7 +27,7 @@
 ## 対象とするURL形式
 
 ```
-https://link.expo2025-wallet.com/pay?to=<address>&master_currency_id=487&amount=<hex>&to_name=<label>
+https://link.expo2025-wallet.com/pay?to=<address>&master_currency_id=487&amount=<hex>&to_name=<label>&type=<type>
 ```
 
 これをEIP-681形式に変換します:
@@ -41,6 +41,11 @@ ethereum:<JPYCコントラクトアドレス>@137/transfer?address=<to>&uint256=
 `uint256=` パラメータ自体が省かれます（`ethereum:<contract>@137/transfer?address=<to>`）。これはEIP-681仕様が金額未指定のリクエストを
 許容している（受け取り側のウォレットがユーザーに入力させる）ことに
 対応したものです。
+
+`type`（例: `dynamic`）は `to_name` と同様、解釈や検証を加えず生の
+文字列のまま `link_type`（JS側では `linkType`）として保持します。
+取りうる値の全体像が未確認のため、真偽値等には決め打ちしていません。
+パラメータが存在しない場合は `None`（JS側では `undefined`）です。
 
 ## インストール
 
@@ -89,6 +94,9 @@ fn main() {
     // まとめて取得することもできる
     let addr_amount = link.address_amount();
     println!("{} / {:?}", addr_amount.address, addr_amount.amount);
+
+    // to_name / link_type は生のまま（None は「パラメータ自体が無い」）
+    println!("to_name: {:?}, link_type: {:?}", link.to_name, link.link_type);
 }
 ```
 
@@ -116,8 +124,8 @@ try {
   // アドレスと金額を個別に取得する（amountは元URLに無い場合 undefined になる）
   console.log(link.to, link.amount, link.amountHex);
 
-  // その他のフィールド
-  console.log(link.chainId, link.currencySymbol, link.currencyContract, link.toName);
+  // その他のフィールド（toName/linkType は元URLに無い場合 undefined）
+  console.log(link.chainId, link.currencySymbol, link.currencyContract, link.toName, link.linkType);
 } catch (err) {
   console.error(err.kind, err);
 }
