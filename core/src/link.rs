@@ -9,7 +9,10 @@ use crate::currency::Currency;
 pub struct ChainId(pub u64);
 
 impl ChainId {
+    pub const ETHEREUM: ChainId = ChainId(constants::ETHEREUM_CHAIN_ID);
     pub const POLYGON: ChainId = ChainId(constants::POLYGON_CHAIN_ID);
+    pub const KAIA: ChainId = ChainId(constants::KAIA_CHAIN_ID);
+    pub const AVALANCHE: ChainId = ChainId(constants::AVALANCHE_CHAIN_ID);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

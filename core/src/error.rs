@@ -19,7 +19,8 @@ pub enum ParseError {
     MissingParam { name: &'static str },
 
     /// `id` はクエリ中の生の `master_currency_id` 値（数値とは限らない）。
-    /// 現時点では "487"（JPYC）のみ対応している。
+    /// 現時点ではJPYCの "487"（Polygon）/ "489"（Avalanche）/
+    /// "490"（Ethereum）/ "712"（Kaia）のみ対応している。
     #[error("unsupported currency id: {id}")]
     UnsupportedCurrency { id: String },
 

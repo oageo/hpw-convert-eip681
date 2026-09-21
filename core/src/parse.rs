@@ -5,11 +5,11 @@ use crate::amount;
 use crate::constants;
 use crate::currency::Currency;
 use crate::error::ParseError;
-use crate::link::{ChainId, ParsedLink};
+use crate::link::ParsedLink;
 
 /// HashPort Wallet決済リンクをパースし、構成要素に分解する。
 ///
-/// パイプラインの順序: URLパース → ホスト検証 → クエリ抽出 → 通貨判定 →
+/// パイプラインの順序: URLパース → ホスト検証 → クエリ抽出 → 通貨・チェーン判定 →
 /// アドレス検証 → 金額デコード → 構築。各ステップでエラーがあれば
 /// その時点で返す。
 pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
@@ -54,7 +54,8 @@ pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
         name: "master_currency_id",
     })?;
 
-    let currency = Currency::from_raw_id(&currency_raw)?;
+    // `master_currency_id` は通貨だけでなくチェーンも同時に決定する。
+    let (currency, chain_id) = Currency::from_raw_id(&currency_raw)?;
     let to = address::parse_address(&to_raw)?;
     // `amount` は元URLに存在しないことがあるため必須パラメータとしない。
     // 存在する場合のみ16進デコードする。
@@ -65,7 +66,7 @@ pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
     Ok(ParsedLink {
         to,
         currency,
-        chain_id: ChainId::POLYGON,
+        chain_id,
         amount,
         to_name,
         link_type,

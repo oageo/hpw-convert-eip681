@@ -30,6 +30,28 @@ assert.equal(
   "toEip681() should produce the expected ERC-681 URI"
 );
 
+// master_currency_id によってチェーンが切り替わる（JPYCのコントラクトアドレスは
+// 全チェーン共通なので、EIP-681出力で変わるのは @<chainId> の部分のみ）。
+// HashPort Walletが実際に生成した100 JPYCの決済リンクを使う。
+for (const [masterCurrencyId, chainId] of [
+  ["487", 137], // Polygon
+  ["489", 43114], // Avalanche C-Chain
+  ["490", 1], // Ethereum
+  ["712", 8217], // Kaia
+]) {
+  const link = parseHashportLink(
+    `https://link.expo2025-wallet.com/pay?to=0x9aD4Ba3D9FB338Cd9C836cD5f222BB5fF8ab2456&master_currency_id=${masterCurrencyId}&amount=0x0000000000000000000000000000000000000000000000056bc75e2d63100000&to_name=oa&type=dynamic`
+  );
+  assert.equal(link.chainId, chainId, `master_currency_id=${masterCurrencyId} should map to chain ${chainId}`);
+  assert.equal(link.currencySymbol, "JPYC", "currencySymbol should be JPYC on every chain");
+  assert.equal(link.amount, "100000000000000000000", "zero-padded hex amount should decode to 100 JPYC");
+  assert.equal(
+    link.toEip681(),
+    `ethereum:0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29@${chainId}/transfer?address=0x9aD4Ba3D9FB338Cd9C836cD5f222BB5fF8ab2456&uint256=100000000000000000000`,
+    `toEip681() should target chain ${chainId}`
+  );
+}
+
 // amount パラメータが元URLに存在しない場合は amount/amountHex が undefined になり、
 // EIP-681出力からも uint256= が省かれる
 const withoutAmount = parseHashportLink(

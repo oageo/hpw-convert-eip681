@@ -99,7 +99,8 @@ impl From<core_lib::ParsedLink> for ParsedLink {
             amount_hex: p.amount.map(|a| format!("{a:#x}")),
             // チェーンIDはu32を超えうる（巨大なIDを使うEVMチェーンが存在する）。
             // `as` による黙った切り捨てではなく、収まらない場合は大きな音を
-            // 立てて失敗させる。現状はPolygon(137)のみなので到達しない。
+            // 立てて失敗させる。現状の対応チェーン（Ethereum 1 / Polygon 137 /
+            // Kaia 8217 / Avalanche 43114）はいずれも収まるので到達しない。
             chain_id: u32::try_from(p.chain_id.0)
                 .expect("chain id exceeds u32 — widen the JS-facing chainId type"),
             currency_symbol: p.currency.symbol().to_string(),

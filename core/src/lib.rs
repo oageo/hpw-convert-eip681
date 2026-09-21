@@ -7,7 +7,8 @@
 //! 持たない人が、提示されたQR/リンクを読み取り別のウォレットで支払うための
 //! 相互運用ツールとして存在する。HashPortの承認・提携を受けたものではない。
 //!
-//! 現時点ではPolygon（chainId 137）とJPYCのみに対応する。
+//! 現時点ではJPYCのみ、チェーンはEthereum（chainId 1）/ Polygon（137）/
+//! Avalanche C-Chain（43114）/ Kaia（8217）に対応する。
 
 mod address;
 mod amount;
