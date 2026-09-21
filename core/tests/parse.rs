@@ -1,5 +1,5 @@
 use alloy_primitives::U256;
-use hpw_convert_eip681::{is_supported, parse, validate_checksum, ParseError};
+use hpw_convert_eip681::{is_supported, parse, validate_checksum, ChainId, Currency, ParseError};
 
 const CHECKSUM_ADDR: &str = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const JPYC_ADDR: &str = "0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29";
@@ -115,6 +115,81 @@ fn type_dynamic_param_is_captured_as_link_type() {
         Some(U256::from_str_radix(ONE_TOKEN_HEX, 16).unwrap())
     );
     assert_eq!(parsed.link_type.as_deref(), Some("dynamic"));
+}
+
+// HashPort Walletが実際に生成した100 JPYCの決済リンク（チェーン違い）。
+// `amount` は64桁にゼロ埋めされた16進で、0x56bc75e2d63100000 = 100 * 10^18。
+const REAL_LINK_TO: &str = "0x9aD4Ba3D9FB338Cd9C836cD5f222BB5fF8ab2456";
+const REAL_LINK_AMOUNT_HEX: &str =
+    "0x0000000000000000000000000000000000000000000000056bc75e2d63100000";
+const HUNDRED_TOKENS_DECIMAL: &str = "100000000000000000000";
+
+fn real_link(master_currency_id: &str) -> String {
+    url(&format!(
+        "to={REAL_LINK_TO}&master_currency_id={master_currency_id}&amount={REAL_LINK_AMOUNT_HEX}&to_name=oa&type=dynamic"
+    ))
+}
+
+fn assert_real_link_resolves_to_chain(master_currency_id: &str, expected_chain: ChainId) {
+    let link = real_link(master_currency_id);
+    let parsed = parse(&link).expect("should parse");
+
+    assert_eq!(parsed.currency, Currency::Jpyc);
+    assert_eq!(parsed.chain_id, expected_chain);
+    assert_eq!(parsed.to.to_string(), REAL_LINK_TO);
+    assert_eq!(
+        parsed.amount,
+        Some(U256::from(100u8) * U256::from(10u8).pow(U256::from(18u8)))
+    );
+    assert_eq!(parsed.to_name.as_deref(), Some("oa"));
+    assert_eq!(parsed.link_type.as_deref(), Some("dynamic"));
+    // JPYCは全対応チェーンで同一コントラクトアドレスのため、EIP-681出力で
+    // 変わるのは `@<chain_id>` の部分のみ。
+    assert_eq!(
+        parsed.to_eip681(),
+        format!(
+            "ethereum:{JPYC_ADDR}@{}/transfer?address={REAL_LINK_TO}&uint256={HUNDRED_TOKENS_DECIMAL}",
+            expected_chain.0
+        )
+    );
+    assert!(is_supported(&link));
+}
+
+#[test]
+fn polygon_jpyc_link_resolves_to_chain_137() {
+    assert_real_link_resolves_to_chain("487", ChainId::POLYGON);
+    assert_eq!(ChainId::POLYGON.0, 137);
+}
+
+#[test]
+fn avalanche_jpyc_link_resolves_to_chain_43114() {
+    assert_real_link_resolves_to_chain("489", ChainId::AVALANCHE);
+    assert_eq!(ChainId::AVALANCHE.0, 43114);
+}
+
+#[test]
+fn ethereum_jpyc_link_resolves_to_chain_1() {
+    assert_real_link_resolves_to_chain("490", ChainId::ETHEREUM);
+    assert_eq!(ChainId::ETHEREUM.0, 1);
+}
+
+#[test]
+fn kaia_jpyc_link_resolves_to_chain_8217() {
+    assert_real_link_resolves_to_chain("712", ChainId::KAIA);
+    assert_eq!(ChainId::KAIA.0, 8217);
+}
+
+#[test]
+fn currency_id_adjacent_to_supported_ones_is_rejected() {
+    // 対応ID（487/489/490）に挟まれた488は未確認のIDであり、推測で
+    // 受理してはならない。
+    let link = real_link("488");
+    assert_eq!(
+        parse(&link),
+        Err(ParseError::UnsupportedCurrency {
+            id: "488".to_string()
+        })
+    );
 }
 
 #[test]

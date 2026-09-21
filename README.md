@@ -19,26 +19,37 @@
 
 現時点では以下のみに対応しています（他のチェーン・通貨は今後の対応も未定です）:
 
-- チェーン: **Polygon (chain id `137`)** のみ
-- 通貨: **JPYC** (`master_currency_id=487`) のみ
+- 通貨: **JPYC** のみ
+- チェーン: 下表の4チェーン
+
+HashPort Walletの `master_currency_id` は通貨単体ではなく「通貨×チェーン」の組ごとに振られているため、この値からチェーンも決定します。
+
+| `master_currency_id` | 通貨 | チェーン | chain id |
+| --- | --- | --- | --- |
+| `487` | JPYC | Polygon | `137` |
+| `489` | JPYC | Avalanche C-Chain | `43114` |
+| `490` | JPYC | Ethereum | `1` |
+| `712` | JPYC | Kaia | `8217` |
+
+JPYCのコントラクトアドレスは全チェーン共通（`0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29`）のため、EIP-681出力でチェーンごとに変わるのは `@<chain id>` の部分のみです。
 
 対応外のURL・チェーン・通貨は `ParseError` （もしくはJS側のタグ付きエラー）として明示的に拒否されます。
 
 ## 対象とするURL形式
 
 ```
-https://link.expo2025-wallet.com/pay?to=<address>&master_currency_id=487&amount=<hex>&to_name=<label>&type=<type>
+https://link.expo2025-wallet.com/pay?to=<address>&master_currency_id=<id>&amount=<hex>&to_name=<label>&type=<type>
 ```
 
 これをEIP-681形式に変換します:
 
 ```
-ethereum:<JPYCコントラクトアドレス>@137/transfer?address=<to>&uint256=<amount>
+ethereum:<JPYCコントラクトアドレス>@<chain id>/transfer?address=<to>&uint256=<amount>
 ```
 
 `amount` は元URLに存在しないことがあります。その場合 `amount` は
 `None`（JS側では `undefined`）として扱われ、EIP-681出力からも
-`uint256=` パラメータ自体が省かれます（`ethereum:<contract>@137/transfer?address=<to>`）。これはEIP-681仕様が金額未指定のリクエストを
+`uint256=` パラメータ自体が省かれます（`ethereum:<contract>@<chain id>/transfer?address=<to>`）。これはEIP-681仕様が金額未指定のリクエストを
 許容している（受け取り側のウォレットがユーザーに入力させる）ことに
 対応したものです。
 

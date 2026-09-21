@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`hpw-convert-eip681` is an **unofficial, unaffiliated** parser that converts HashPort Wallet payment links into EIP-681 (ERC-681) payment URIs, or their individual components (address, amount). It performs pure client-side string/URL parsing only — it never sends any network request to HashPort's servers. Currently supports only Polygon (chain id 137) and JPYC (`master_currency_id=487`); other chains/currencies are explicitly rejected, not silently ignored.
+`hpw-convert-eip681` is an **unofficial, unaffiliated** parser that converts HashPort Wallet payment links into EIP-681 (ERC-681) payment URIs, or their individual components (address, amount). It performs pure client-side string/URL parsing only — it never sends any network request to HashPort's servers. Currently supports only JPYC, on four chains selected by `master_currency_id`: `487` = Polygon (chain id 137), `489` = Avalanche C-Chain (43114), `490` = Ethereum (1), `712` = Kaia (8217). Other chains/currencies are explicitly rejected, not silently ignored.
 
 Target URL format:
 ```
-https://link.expo2025-wallet.com/pay?to=<address>&master_currency_id=487&amount=<hex>&to_name=<label>
+https://link.expo2025-wallet.com/pay?to=<address>&master_currency_id=<id>&amount=<hex>&to_name=<label>&type=<type>
 ```
 
 Two-crate Cargo workspace:
@@ -46,7 +46,7 @@ node wasm/scripts/finalize-package.mjs
 
 ### Parsing pipeline (`core/src/`)
 
-`parse::parse()` is the single entry point; `is_supported()` is a thin `.is_ok()` wrapper over it. Pipeline order, each step returning on first error: URL parse → exact host match (`constants::EXPECTED_HOST`, case-insensitive via `url` crate's own normalization, no suffix matching — rejects spoofing like `link.expo2025-wallet.com.evil.example`) → single-pass query extraction → currency check (`Currency::from_raw_id`) → address parse (lenient, no checksum enforced) → amount decode (hex, `0x`-prefix optional) → construct `ParsedLink`.
+`parse::parse()` is the single entry point; `is_supported()` is a thin `.is_ok()` wrapper over it. Pipeline order, each step returning on first error: URL parse → exact host match (`constants::EXPECTED_HOST`, case-insensitive via `url` crate's own normalization, no suffix matching — rejects spoofing like `link.expo2025-wallet.com.evil.example`) → single-pass query extraction → currency + chain resolution (`Currency::from_raw_id`) → address parse (lenient, no checksum enforced) → amount decode (hex, `0x`-prefix optional) → construct `ParsedLink`.
 
 Module split mirrors this pipeline and the `ParseError` variant families: `constants.rs` (all magic values — JPYC contract address, chain id, host, currency id — centralized here rather than scattered, mirroring the author's other project `jpyc-payment-qr`'s `constants.ts` convention), `error.rs`, `currency.rs`, `amount.rs`, `address.rs`, `link.rs` (`ParsedLink`/`AddressAmount`/`ChainId` output types), `parse.rs` (the pipeline itself).
 
@@ -54,6 +54,8 @@ Non-obvious invariants worth knowing before touching this code:
 - **`amount` is `Option<U256>`, not `U256`.** The source URL sometimes omits the `amount` param entirely; that's `None`, not an error. `to_eip681()` omits `&uint256=` from the output URI when absent (EIP-681 allows amount-unspecified transfer requests). A present-but-empty `amount=` *is* an error (`InvalidAmount`) — don't conflate the two.
 - **Hex decoding must go through `strip_prefix("0x"/"0X")` + `U256::from_str_radix(_, 16)`, never bare `U256::from_str`.** The bare `FromStr` (backed by `ruint`) auto-detects radix and defaults to decimal for unprefixed input, so an unprefixed all-digit amount like `"1000"` would silently be misparsed as decimal 1000 instead of hex 0x1000 — a value-corruption bug, not a caught error.
 - **The empty-string check in `amount.rs` is load-bearing, not cosmetic.** `ruint`'s `from_str_radix` returns `Ok(0)` for an empty string rather than erroring, so without the explicit check, `amount=` or `amount=0x` would silently parse as amount zero.
+- **`master_currency_id` identifies a (currency, chain) pair, not a currency.** HashPort assigns a separate id per chain for the same token, so `Currency::from_raw_id` returns `(Currency, ChainId)` and is the single place the id table lives — `parse()` has no chain logic of its own. Only ids observed in real HashPort-generated links are accepted; don't add ids by interpolation (e.g. `488` sits between supported ids and is deliberately rejected).
+- **`Currency::contract_address()` takes no chain argument** because JPYC is deployed at the same address on all four supported chains (`constants::JPYC_ADDRESS`). Adding a token whose address differs per chain means changing this signature to take a `ChainId`.
 - **`Currency::from_raw_id` matches the raw `&str`, not a parsed `u32`.** This means a non-numeric `master_currency_id` value falls into the same `UnsupportedCurrency` path as an out-of-range numeric one, without a third error variant.
 - **`validate_checksum` (EIP-55) is strict, not "uniform case is unambiguous."** `alloy_primitives::Address::parse_checksummed` rejects all-lowercase/all-uppercase input even though it's unambiguous about which address it names — it requires exact mixed-case checksum match. The lenient `parse_address` used by the main pipeline, by contrast, accepts any casing and even a missing `0x` prefix.
 - **Duplicate query params are last-wins** (`to=X&to=Y` → `Y`), intentionally not an error — documented inline in `parse.rs` rather than enforced.
@@ -67,7 +69,7 @@ Non-obvious invariants worth knowing before touching this code:
 Three deliberate JS-interop decisions, easy to accidentally regress:
 - **Errors throw as plain tagged JS values, not returned Result-likes.** `serde_wasm_bindgen::to_value(&ParseError)` produces `{"kind": "...", ...}` (internally tagged via `#[serde(tag = "kind")]` on the `core` side); documented separately in `wasm/types/errors.d.ts` since wasm-bindgen's generated `.d.ts` can't express "this throws a value of shape X."
 - **`U256` amounts are always decimal strings on the JS side, never numbers or raw BigInt.** `ParsedLink` (the wasm-facing struct) is hand-written with an explicit `From<core::ParsedLink>` conversion rather than derived via `serde-wasm-bindgen`, specifically because `alloy_primitives`'s own `Serialize` impl for `U256`/`Address` emits *hex* (JSON-RPC "quantity" style) — pushing `core::ParsedLink` through `serde-wasm-bindgen` directly would silently produce hex amounts in JS.
-- **`chain_id` conversion to `u32` uses `u32::try_from(..).expect(...)`, not `as u32`.** Chain ids can exceed u32 range in general; an `as` cast would silently truncate if a future chain were added. Currently unreachable (only Polygon/137 exists) but deliberately fails loudly rather than truncating.
+- **`chain_id` conversion to `u32` uses `u32::try_from(..).expect(...)`, not `as u32`.** Chain ids can exceed u32 range in general; an `as` cast would silently truncate if a future chain were added. Currently unreachable (all supported chain ids — 1, 137, 8217, 43114 — fit) but deliberately fails loudly rather than truncating.
 
 ### Release/publish workflows (`.github/workflows/`)
 
@@ -80,4 +82,4 @@ Three deliberate JS-interop decisions, easy to accidentally regress:
 ### Conventions specific to this repo
 
 - **All in-code comments are written in Japanese**, per the author's preference — match this when editing, including doc comments (`///`, `//!`).
-- The JPYC Polygon contract address (`constants::JPYC_POLYGON_ADDRESS`) is a compile-time-checksum-validated constant (`address!` macro) — if this ever needs to change, re-verify against an authoritative source (not memory), since this project treats "don't guess contract addresses" as a hard rule.
+- The JPYC contract address (`constants::JPYC_ADDRESS`, shared by all supported chains) is a compile-time-checksum-validated constant (`address!` macro) — if this ever needs to change, re-verify against an authoritative source (not memory), since this project treats "don't guess contract addresses" as a hard rule.
