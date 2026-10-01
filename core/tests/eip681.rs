@@ -167,7 +167,7 @@ fn target_lowercase_and_uppercase_accepted() {
     assert!(parse_eip681(&lower).is_ok());
     let upper = format!(
         "ethereum:0x{}@137/transfer?address={TO}",
-        &JPYC[2..].to_ascii_uppercase()
+        JPYC[2..].to_ascii_uppercase()
     );
     assert!(parse_eip681(&upper).is_ok());
 }
