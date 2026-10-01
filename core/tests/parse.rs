@@ -354,6 +354,22 @@ fn bare_0x_prefix_amount_is_rejected() {
 }
 
 #[test]
+fn underscore_in_amount_is_rejected_not_skipped() {
+    // 回帰テスト: ruintの `from_str_radix` は `_` を桁区切りとして読み飛ばす
+    // ため、事前の16進数字チェックがないと `amount=_` が空文字チェックを
+    // すり抜けて金額0になり、`0x1_000` も4096として黙って受理される。
+    for amount in ["_", "0x_", "__", "0x1_000", "1_0"] {
+        let link = url(&format!(
+            "to={CHECKSUM_ADDR}&master_currency_id=487&amount={amount}"
+        ));
+        assert!(
+            matches!(parse(&link), Err(ParseError::InvalidAmount { .. })),
+            "amount={amount} should be rejected"
+        );
+    }
+}
+
+#[test]
 fn amount_larger_than_u128_is_decoded_correctly() {
     // 34桁の16進数（128ビット超）。u128::MAXを大きく超えるが切り捨てられ
     // てはならない。

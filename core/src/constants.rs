@@ -4,6 +4,14 @@ use alloy_primitives::{address, Address};
 /// を防ぐため、サフィックス一致ではなく完全一致で検証する。
 pub const EXPECTED_HOST: &str = "link.expo2025-wallet.com";
 
+/// HashPort Wallet決済リンクを生成する際（EIP-681→HashPortリンク方向）の
+/// スキーム。HashPort Walletが実際に生成したリンクに合わせている。
+pub const HASHPORT_LINK_SCHEME: &str = "https";
+
+/// HashPort Wallet決済リンクを生成する際のパス。HashPort Walletが実際に
+/// 生成したリンクに合わせている。
+pub const HASHPORT_LINK_PATH: &str = "/pay";
+
 // `master_currency_id` の生値。HashPort Wallet側では通貨単体ではなく
 // 「通貨×チェーン」の組ごとにIDが振られているため、同じJPYCでもチェーン
 // ごとに値が異なる。いずれもHashPort Walletが実際に生成した決済リンクから
