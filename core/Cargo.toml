@@ -6,12 +6,13 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 readme.workspace = true
-description = "Unofficial, unaffiliated parser that converts HashPort Wallet JPYC payment links into EIP-681 (ERC-681) payment URIs. Not endorsed by or affiliated with HashPort."
+description = "Unofficial, unaffiliated bidirectional converter between HashPort Wallet JPYC payment links and EIP-681 (ERC-681) payment URIs. Not endorsed by or affiliated with HashPort."
 keywords = ["ethereum", "eip681", "jpyc", "stablecoin", "wallet"]
 categories = ["parser-implementations"]
 
 [dependencies]
 url = "2.5"
+percent-encoding = "2.3"
 alloy-primitives = { version = "1", default-features = false, features = ["std"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"], optional = true }

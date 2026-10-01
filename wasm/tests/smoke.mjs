@@ -8,7 +8,9 @@
 import assert from "node:assert/strict";
 import {
   isSupported,
+  isSupportedEip681,
   isValidChecksum,
+  parseEip681,
   parseHashportLink,
 } from "../pkg-node/hpw_convert_eip681.js";
 
@@ -88,5 +90,141 @@ try {
   assert.equal(err.host, "evil.example.com", "thrown error should carry the offending host");
 }
 assert.equal(threw, true, "parseHashportLink should throw for an unsupported host");
+
+// HashPortリンク → EIP-681 → HashPortリンクの往復。HashPort Walletが実際に
+// 生成したリンクがバイト単位で完全に復元されることを確認する。
+for (const [masterCurrencyId, chainId] of [
+  ["487", 137], // Polygon
+  ["489", 43114], // Avalanche C-Chain
+  ["490", 1], // Ethereum
+  ["712", 8217], // Kaia
+]) {
+  const original = `https://link.expo2025-wallet.com/pay?to=0x9aD4Ba3D9FB338Cd9C836cD5f222BB5fF8ab2456&master_currency_id=${masterCurrencyId}&amount=0x0000000000000000000000000000000000000000000000056bc75e2d63100000&to_name=oa&type=dynamic`;
+  const uri = parseHashportLink(original).toEip681();
+  const fromUri = parseEip681(uri, "oa", "dynamic");
+  assert.equal(fromUri.chainId, chainId, `parseEip681 should keep chain ${chainId}`);
+  assert.equal(fromUri.amount, "100000000000000000000", "parseEip681 amount should be a decimal string");
+  assert.equal(fromUri.toName, "oa", "toName argument should populate toName");
+  assert.equal(fromUri.linkType, "dynamic", "linkType argument should populate linkType");
+  assert.equal(fromUri.toEip681(), uri, "toEip681() should round-trip the EIP-681 URI");
+  assert.equal(
+    fromUri.toHashportLink(),
+    original,
+    `HashPort -> EIP-681 -> HashPort should be byte-identical for master_currency_id=${masterCurrencyId}`
+  );
+}
+
+const JPYC = "0xE7C3D8C9a439feDe00D2600032D5dB0Be71C3c29";
+const TO = "0x9aD4Ba3D9FB338Cd9C836cD5f222BB5fF8ab2456";
+const EIP681_URI = `ethereum:${JPYC}@137/transfer?address=${TO}&uint256=100000000000000000000`;
+const HASHPORT_BASE = `https://link.expo2025-wallet.com/pay?to=${TO}&master_currency_id=487&amount=0x0000000000000000000000000000000000000000000000056bc75e2d63100000`;
+
+// toName/linkType を省略・undefined・null にした場合は to_name/type パラメータ自体が出力されない
+for (const [label, link] of [
+  ["omitted", parseEip681(EIP681_URI)],
+  ["undefined", parseEip681(EIP681_URI, undefined, undefined)],
+  ["null", parseEip681(EIP681_URI, null, null)],
+]) {
+  assert.equal(link.toName, undefined, `toName should be undefined when ${label}`);
+  assert.equal(link.linkType, undefined, `linkType should be undefined when ${label}`);
+  assert.equal(link.toHashportLink(), HASHPORT_BASE, `toHashportLink() should omit to_name/type when ${label}`);
+}
+
+// 空文字は「値が空のパラメータ」として保たれる（省略とは区別される）
+const emptyName = parseEip681(EIP681_URI, "", "");
+assert.equal(emptyName.toName, "", "empty toName should stay an empty string");
+assert.equal(emptyName.linkType, "", "empty linkType should stay an empty string");
+assert.equal(
+  emptyName.toHashportLink(),
+  `${HASHPORT_BASE}&to_name=&type=`,
+  "empty toName/linkType should produce present-but-empty params"
+);
+const emptyNameReparsed = parseHashportLink(emptyName.toHashportLink());
+assert.equal(emptyNameReparsed.toName, "", "empty to_name should survive re-parsing");
+assert.equal(emptyNameReparsed.linkType, "", "empty type should survive re-parsing");
+
+// 金額なしのEIP-681 URI → amount パラメータなしのHashPortリンク
+const noAmount = parseEip681(`ethereum:${JPYC}@1/transfer?address=${TO}`);
+assert.equal(noAmount.amount, undefined, "amount should be undefined when uint256 is absent");
+assert.equal(noAmount.amountHex, undefined, "amountHex should be undefined when uint256 is absent");
+assert.equal(
+  noAmount.toHashportLink(),
+  `https://link.expo2025-wallet.com/pay?to=${TO}&master_currency_id=490`,
+  "toHashportLink() should omit amount when absent"
+);
+
+// to_name に別パラメータを注入しようとしてもパーセントエンコードされ、
+// 再パースしても元の to は変わらない
+const injectedName = "a&to=0x0000000000000000000000000000000000000001";
+const injectedLink = parseEip681(EIP681_URI, injectedName, "dynamic").toHashportLink();
+assert.equal(
+  injectedLink,
+  `${HASHPORT_BASE}&to_name=a%26to%3D0x0000000000000000000000000000000000000001&type=dynamic`,
+  "to_name should be percent-encoded"
+);
+const injectedReparsed = parseHashportLink(injectedLink);
+assert.equal(injectedReparsed.to, TO, "injected to= must not override the recipient");
+assert.equal(injectedReparsed.toName, injectedName, "to_name should round-trip verbatim");
+
+// 空白は + ではなく %20 になる
+const spaced = parseEip681(EIP681_URI, "Cafe Expo", "dynamic").toHashportLink();
+assert.equal(spaced, `${HASHPORT_BASE}&to_name=Cafe%20Expo&type=dynamic`, "spaces should be encoded as %20");
+assert.equal(parseHashportLink(spaced).toName, "Cafe Expo", "%20 should decode back to a space");
+
+// parseEip681 の異常系（タグ付きエラーをthrowする）
+function assertThrowsKind(fn, expected, message) {
+  let caught;
+  let threw = false;
+  try {
+    fn();
+  } catch (err) {
+    threw = true;
+    caught = err;
+  }
+  assert.equal(threw, true, `${message}: should throw`);
+  for (const [key, value] of Object.entries(expected)) {
+    assert.equal(caught[key], value, `${message}: err.${key}`);
+  }
+}
+assertThrowsKind(
+  () => parseEip681(`ethereum:${JPYC}@56/transfer?address=${TO}`),
+  { kind: "UnsupportedChain", chain_id: "56" },
+  "unsupported chain (BSC)"
+);
+assertThrowsKind(
+  () => parseEip681(`ethereum:${JPYC}/transfer?address=${TO}`),
+  { kind: "MissingParam", name: "chain_id" },
+  "missing chain id"
+);
+assertThrowsKind(
+  () => parseEip681(`ethereum:0xdAC17F958D2ee523a2206206994597C13D831ec7@1/transfer?address=${TO}`),
+  { kind: "UnsupportedContract", address: "0xdAC17F958D2ee523a2206206994597C13D831ec7" },
+  "unsupported contract"
+);
+assertThrowsKind(
+  () => parseEip681(`ethereum:${JPYC}@137/transfer?address=${TO}&address=0x0000000000000000000000000000000000000001`),
+  { kind: "DuplicateParam", name: "address" },
+  "duplicate address"
+);
+assertThrowsKind(
+  () => parseEip681(`ethereum:${JPYC}@137/transfer?address=${TO}&value=1`),
+  { kind: "UnsupportedParam", name: "value" },
+  "value param"
+);
+assertThrowsKind(
+  () => parseEip681(`ethereum:${JPYC}@137/transfer?address=${TO}&uint256=-1`),
+  { kind: "InvalidAmount", value: "-1" },
+  "negative amount"
+);
+assertThrowsKind(() => parseEip681("not a uri"), { kind: "InvalidEip681" }, "garbage input");
+
+// isSupportedEip681（throwしない述語関数）
+assert.equal(isSupportedEip681(EIP681_URI), true, "isSupportedEip681 should accept a valid JPYC URI");
+assert.equal(
+  isSupportedEip681(`ethereum:${JPYC}@56/transfer?address=${TO}`),
+  false,
+  "isSupportedEip681 should reject an unsupported chain"
+);
+assert.equal(isSupportedEip681("not a uri"), false, "isSupportedEip681 should reject garbage input");
 
 console.log("wasm smoke test passed");
