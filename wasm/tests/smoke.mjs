@@ -227,4 +227,42 @@ assert.equal(
 );
 assert.equal(isSupportedEip681("not a uri"), false, "isSupportedEip681 should reject garbage input");
 
+// 送金先として確実に安全でないアドレス（ゼロアドレス・トークンコントラクト自身）は
+// 両方向で拒否され、`{ kind: "UnsafeRecipient", reason }` だけを持つ値がthrowされる
+// （errors.d.ts の型と一致し、余計なキーを持たないこと）。
+function assertThrowsExactly(fn, expected, message) {
+  let caught;
+  let threw = false;
+  try {
+    fn();
+  } catch (err) {
+    threw = true;
+    caught = err;
+  }
+  assert.equal(threw, true, `${message}: should throw`);
+  assert.deepStrictEqual(
+    Object.keys(caught).sort(),
+    Object.keys(expected).sort(),
+    `${message}: thrown value should have exactly these own keys`
+  );
+  for (const [key, value] of Object.entries(expected)) {
+    assert.equal(caught[key], value, `${message}: err.${key}`);
+  }
+}
+const ZERO = "0x0000000000000000000000000000000000000000";
+for (const [label, recipient, reason] of [
+  ["zero address", ZERO, "zero_address"],
+  ["token contract (checksummed)", JPYC, "token_contract"],
+  ["token contract (lowercase)", JPYC.toLowerCase(), "token_contract"],
+]) {
+  const expected = { kind: "UnsafeRecipient", reason };
+  const hashportLink = `https://link.expo2025-wallet.com/pay?to=${recipient}&master_currency_id=487&amount=0x0000000000000000000000000000000000000000000000056bc75e2d63100000`;
+  assertThrowsExactly(() => parseHashportLink(hashportLink), expected, `parseHashportLink: ${label}`);
+  assert.equal(isSupported(hashportLink), false, `isSupported should reject ${label}`);
+
+  const uri = `ethereum:${JPYC}@137/transfer?address=${recipient}&uint256=1`;
+  assertThrowsExactly(() => parseEip681(uri), expected, `parseEip681: ${label}`);
+  assert.equal(isSupportedEip681(uri), false, `isSupportedEip681 should reject ${label}`);
+}
+
 console.log("wasm smoke test passed");

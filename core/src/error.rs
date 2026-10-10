@@ -1,3 +1,5 @@
+use std::fmt;
+
 use thiserror::Error;
 
 // `Deserialize` は意図的に導出しない。`MissingParam` の `&'static str`
@@ -63,4 +65,35 @@ pub enum ParseError {
     /// ため、EIP-681入力では曖昧さを残さずエラーとする。
     #[error("duplicate parameter: {name}")]
     DuplicateParam { name: String },
+
+    /// 送金先として確実に安全でないアドレス（ゼロアドレス、対応トークンの
+    /// コントラクト自身）。いずれも送金が失敗するか資金が永久に失われるだけで
+    /// 正当な用途がないため、両方向のパースとHashPortリンク生成で拒否する。
+    #[error("unsafe recipient: {reason}")]
+    UnsafeRecipient { reason: UnsafeRecipientReason },
+}
+
+/// [`ParseError::UnsafeRecipient`] の理由。JS側には `"zero_address"` /
+/// `"token_contract"` の文字列としてシリアライズされる。
+///
+/// `#[non_exhaustive]` により、今後理由を追加しても下流クレートの `match` を
+/// 壊さない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[non_exhaustive]
+pub enum UnsafeRecipientReason {
+    /// ゼロアドレス（`0x0000000000000000000000000000000000000000`）。
+    ZeroAddress,
+    /// 対応トークンのコントラクトアドレス自身（チェーンは問わない）。
+    TokenContract,
+}
+
+impl fmt::Display for UnsafeRecipientReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            UnsafeRecipientReason::ZeroAddress => "zero address",
+            UnsafeRecipientReason::TokenContract => "token contract",
+        })
+    }
 }
