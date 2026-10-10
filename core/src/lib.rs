@@ -32,7 +32,7 @@ mod parse;
 pub use address::validate_checksum;
 pub use currency::Currency;
 pub use eip681::parse_eip681;
-pub use error::ParseError;
+pub use error::{ParseError, UnsafeRecipientReason};
 pub use link::{AddressAmount, ChainId, ParsedLink};
 pub use parse::parse;
 

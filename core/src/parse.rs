@@ -10,8 +10,8 @@ use crate::link::ParsedLink;
 /// HashPort Wallet決済リンクをパースし、構成要素に分解する。
 ///
 /// パイプラインの順序: URLパース → ホスト検証 → クエリ抽出 → 通貨・チェーン判定 →
-/// アドレス検証 → 金額デコード → 構築。各ステップでエラーがあれば
-/// その時点で返す。
+/// アドレス検証（ゼロアドレス・トークンコントラクト自身の拒否を含む） →
+/// 金額デコード → 構築。各ステップでエラーがあればその時点で返す。
 pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
     let url = Url::parse(input).map_err(|e| ParseError::InvalidUrl {
         message: e.to_string(),
@@ -57,6 +57,9 @@ pub fn parse(input: &str) -> Result<ParsedLink, ParseError> {
     // `master_currency_id` は通貨だけでなくチェーンも同時に決定する。
     let (currency, chain_id) = Currency::from_raw_id(&currency_raw)?;
     let to = address::parse_address(&to_raw)?;
+    // ゼロアドレスやトークンコントラクト自身への送金は資金を失うだけなので、
+    // 寛容な順方向でも拒否する。
+    address::check_recipient(to)?;
     // `amount` は元URLに存在しないことがあるため必須パラメータとしない。
     // 存在する場合のみ16進デコードする。
     let amount = amount_raw

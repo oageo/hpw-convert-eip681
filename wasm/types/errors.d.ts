@@ -27,4 +27,8 @@ export type HpwParseError =
   // 意味を黙って捨てることになるため受け付けないパラメータ（例: `value`）。
   | { kind: "UnsupportedParam"; name: string }
   // EIP-681入力での同名パラメータの重複。
-  | { kind: "DuplicateParam"; name: string };
+  | { kind: "DuplicateParam"; name: string }
+  // 送金先として確実に安全でないアドレス。ゼロアドレスなら `"zero_address"`、
+  // 対応トークンのコントラクト自身なら `"token_contract"`。両方向のパースと
+  // `toHashportLink()` で拒否される。
+  | { kind: "UnsafeRecipient"; reason: "zero_address" | "token_contract" };

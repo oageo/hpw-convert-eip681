@@ -61,6 +61,10 @@ ethereum:<JPYCコントラクトアドレス>@<chain id>/transfer?address=<to>&u
 取りうる値の全体像が未確認のため、真偽値等には決め打ちしていません。
 パラメータが存在しない場合は `None`（JS側では `undefined`）です。
 
+順方向は寛容なパースですが、`to` がゼロアドレス、またはJPYCコントラクト自身の
+場合は `UnsafeRecipient` として拒否します（送金が失敗するか資金が永久に失われる
+だけで、正当な用途がないため）。
+
 ## 逆方向: EIP-681 → HashPort Wallet決済リンク
 
 > **注意:** 生成した決済リンクが意味を持つのは、**送金先アドレスがHashPort Wallet側で受け取り先として設定済みである場合に限られます。** 本ライブラリはネットワークアクセスを一切行わないため、そのアドレスがHashPort Walletに登録されているかどうかを確認できません。生成されるのはあくまで「HashPort Walletが生成するリンクと同じ形式の文字列」であり、HashPort Wallet側がそのリンクを受け付けることや、支払いが正しく行われることは保証されません。
@@ -71,7 +75,7 @@ ethereum:<JPYCコントラクトアドレス>@<chain id>/transfer?address=<to>&u
 ethereum:[pay-]<JPYCコントラクトアドレス>@<chain id>/transfer?address=<to>[&uint256=<amount>]
 ```
 
-- `uint256` は省略可能です（省略時は金額未指定のリンクになります）。EIP-681の数値表記に従い、`1000` のような整数のほか `2.014e18` のような指数表記も受け付けます（結果が非負の整数かつ `uint256` に収まる場合のみ）。
+- `uint256` は省略可能です（省略時は金額未指定のリンクになります）。EIP-681の数値表記に従い、`1000` のような整数のほか `2.014e18` のような指数表記も受け付けます（結果が1以上の整数かつ `uint256` に収まる場合のみ。金額を指定しない場合は `uint256=0` ではなく `uint256` 自体を省略してください）。
 - ガス関連のヒント（`gas`・`gasLimit`・`gasPrice`）は、支払い内容を変えないため受け付けたうえで無視します。
 - EIP-681のURIはHashPortリンクの `to_name`・`type` に相当する情報を持たないため、これらは別途指定します（Rustでは `ParsedLink` の `to_name`・`link_type` フィールドを設定、JSでは `parseEip681` の第2・第3引数）。
 
@@ -90,7 +94,10 @@ ethereum:[pay-]<JPYCコントラクトアドレス>@<chain id>/transfer?address=
 | `value=` やその他の未知のパラメータ | `UnsupportedParam` | `value` はネイティブ通貨の同時送金を意味し、黙って捨てると支払いの意味が変わるため |
 | ENS名（`example.eth`）、`0x` のないアドレス | `InvalidAddress` | ENSの名前解決にはネットワークアクセスが必要なため |
 | 大文字小文字が混在しているのにEIP-55チェックサムが合わないアドレス | `InvalidAddress` | 打ち間違いの兆候であるため（すべて小文字・すべて大文字は受け付ける） |
+| ゼロアドレス、JPYCコントラクト自身を受取人にする | `UnsafeRecipient` | 送金が失敗するか資金が永久に失われるだけで正当な用途がないため（順方向・`to_hashport_link()` でも拒否） |
 | 負数、整数にならない値（`1.5`）、`uint256` に収まらない値、16進（`0x10`）、空 | `InvalidAmount` | 金額として一意に解釈できないため |
+| 値0（`0`、`0e5`、`.0` 等） | `InvalidAmount` | 0の送金でもチェーン上では成功して `Transfer` イベントが出るため、入金と誤認されうる（金額未指定なら `uint256` を省略する）。順方向の `amount=0x0` は受け付ける |
+| 整数部・指数部の先頭ゼロ（`01`、`007`、`1e018`） | `InvalidAmount` | chain id と同様、8進と誤読されうるため（`0.5e1` のような単独の `0` は可） |
 | 前後の空白・制御文字・非ASCII文字、フラグメント（`#`）、不正なパーセントエンコード | `InvalidEip681` | コピペ由来の混入物やホモグリフ等を黙って受け入れないため |
 
 ### 出力形式
@@ -265,6 +272,7 @@ try {
 | `UnsupportedCurrency` | 順方向: 非対応の `master_currency_id` |
 | `MissingParam` | 必須パラメータ（順方向の `to`・`master_currency_id`、逆方向の chain id・`address`）がない |
 | `InvalidAddress` / `InvalidAmount` | 両方向: アドレス・金額が不正 |
+| `UnsafeRecipient` | 両方向と `to_hashport_link()`: 受取人がゼロアドレス、または対応トークンのコントラクト自身。JSでは `{ kind: "UnsafeRecipient", reason: "zero_address" \| "token_contract" }`（Rustでは `UnsafeRecipientReason`） |
 | `InvalidEip681` | 逆方向: EIP-681 URIとして構文的に不正 |
 | `UnsupportedContract` / `UnsupportedChain` / `UnsupportedFunction` / `UnsupportedParam` / `DuplicateParam` | 逆方向: [拒否される入力](#拒否される入力)を参照（`UnsupportedChain` は `to_hashport_link()` でも発生しうる） |
 

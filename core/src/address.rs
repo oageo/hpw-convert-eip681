@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use alloy_primitives::Address;
 
-use crate::error::ParseError;
+use crate::currency::Currency;
+use crate::error::{ParseError, UnsafeRecipientReason};
 
 /// メインのパイプラインで使う寛容なパース。大文字小文字を問わず、
 /// `0x`/`0X` プレフィックスの有無も問わない。EIP-55チェックサムは
@@ -56,4 +57,25 @@ pub fn parse_address_eip55_if_mixed(raw: &str) -> Result<Address, ParseError> {
     } else {
         parse_address(raw)
     }
+}
+
+/// 送金先アドレスが確実に安全でないもの（ゼロアドレス、対応トークンの
+/// コントラクト自身）でないかを検査する。いずれも送金が失敗するか資金が
+/// 永久に失われるだけで正当な用途がないため、エラーにする。トークン
+/// コントラクトの判定は [`Currency::from_contract_address`] に委ねる
+/// （チェーンは問わない。JPYCは全対応チェーンで同一アドレスのため）。
+///
+/// 順方向のパース（[`crate::parse`]）、逆方向のパース（[`crate::parse_eip681`]）、
+/// HashPortリンクの生成（[`crate::ParsedLink::to_hashport_link`]）の3箇所から
+/// 呼ぶ。生成側でも検査するのは、`ParsedLink` のフィールドが `pub` で
+/// 任意の値を直接構築できるため（多層防御）。
+pub(crate) fn check_recipient(addr: Address) -> Result<(), ParseError> {
+    let reason = if addr == Address::ZERO {
+        UnsafeRecipientReason::ZeroAddress
+    } else if Currency::from_contract_address(addr).is_some() {
+        UnsafeRecipientReason::TokenContract
+    } else {
+        return Ok(());
+    };
+    Err(ParseError::UnsafeRecipient { reason })
 }

@@ -3,6 +3,7 @@ use std::fmt::Write as _;
 use alloy_primitives::{Address, U256};
 use percent_encoding::{utf8_percent_encode, AsciiSet, PercentEncode, NON_ALPHANUMERIC};
 
+use crate::address;
 use crate::amount;
 use crate::constants;
 use crate::currency::Currency;
@@ -100,7 +101,9 @@ impl ParsedLink {
     /// パラメータとして出力する（[`crate::parse`] で往復させても区別が保たれる）。
     ///
     /// フィールドが `pub` であり任意の組を構築できるため、（通貨, チェーン）の
-    /// 組が対応表にない場合は `ParseError::UnsupportedChain` を返す。
+    /// 組が対応表にない場合は `ParseError::UnsupportedChain` を、`to` が
+    /// ゼロアドレスまたは対応トークンのコントラクト自身である場合は
+    /// `ParseError::UnsafeRecipient` を返す（この順で検査する）。
     pub fn to_hashport_link(&self) -> Result<String, ParseError> {
         let master_currency_id =
             self.currency
@@ -108,6 +111,10 @@ impl ParsedLink {
                 .ok_or_else(|| ParseError::UnsupportedChain {
                     chain_id: self.chain_id.0.to_string(),
                 })?;
+        // パース経由でなく直接構築された `ParsedLink` についても、資金を失う
+        // だけの送金先（ゼロアドレス・トークンコントラクト自身）へのリンクは
+        // 生成しない（多層防御）。
+        address::check_recipient(self.to)?;
 
         let mut link = format!(
             "{}://{}{}?to={}&master_currency_id={master_currency_id}",

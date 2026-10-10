@@ -60,6 +60,24 @@ fn assert_invalid_amount(amount: &str) {
     }
 }
 
+/// `InvalidAmount` であり、かつ `reason` に `needle` を含むことを確認する
+/// （先頭ゼロと値0のように、同じバリアントの中で拒否理由を区別したい場合用）。
+fn assert_invalid_amount_because(amount: &str, needle: &str) {
+    match amount_of(amount) {
+        Err(ParseError::InvalidAmount { value, reason }) => {
+            assert_eq!(value, amount);
+            assert!(
+                reason.contains(needle),
+                "reason for {amount:?} should contain {needle:?}, got {reason:?}"
+            );
+        }
+        other => panic!("expected InvalidAmount for {amount:?}, got {other:?}"),
+    }
+}
+
+const ZERO_REASON: &str = "greater than zero";
+const LEADING_ZERO_REASON: &str = "leading zeros";
+
 // ---------------------------------------------------------------------------
 // 往復変換
 // ---------------------------------------------------------------------------
@@ -528,9 +546,108 @@ fn recipient_invalid_rejected() {
 #[test]
 fn amount_plain_integer() {
     assert_eq!(amount_of("100").unwrap(), Some(U256::from(100)));
-    assert_eq!(amount_of("0").unwrap(), Some(U256::ZERO));
-    // 先頭ゼロは10進として扱う（8進や16進として再解釈しない）。
-    assert_eq!(amount_of("0100").unwrap(), Some(U256::from(100)));
+    assert_eq!(amount_of("10").unwrap(), Some(U256::from(10)));
+    assert_eq!(amount_of("1").unwrap(), Some(U256::from(1)));
+    // 以前は `0` を金額0、`0100` を10進の100として受け付けていたが、
+    // 値0と先頭ゼロはいずれも拒否するよう厳格化した
+    // （`amount_zero_rejected`・`amount_leading_zeros_rejected` を参照）。
+    assert_invalid_amount_because("0", ZERO_REASON);
+    assert_invalid_amount_because("0100", LEADING_ZERO_REASON);
+}
+
+#[test]
+fn amount_zero_rejected() {
+    // 0のERC-20送金も成功して `Transfer` イベントを発行するため、受取側が
+    // 入金と誤認しうる。金額未指定なら `uint256` 自体を省略させる。
+    for zero in [
+        "0",
+        "+0",
+        "%2B0",
+        "0.0",
+        ".0",
+        "0.000",
+        ".000",
+        "0e5",
+        "0E5",
+        "0e0",
+        "0.0e1",
+        ".0e1",
+        "0e99999999999999999999",
+        "0.000e99999999999999999999",
+    ] {
+        match amount_of(zero) {
+            Err(ParseError::InvalidAmount { reason, .. }) => {
+                assert!(reason.contains(ZERO_REASON), "{zero:?}: {reason:?}");
+            }
+            other => panic!("expected InvalidAmount for {zero:?}, got {other:?}"),
+        }
+    }
+    // 負のゼロは値0の判定より先に負数として拒否される。
+    assert_invalid_amount_because("-0", "negative");
+}
+
+#[test]
+fn amount_zero_rejected_only_in_reverse_direction() {
+    // 順方向（HashPortリンクの `amount=0x0`）は従来どおり受け付ける。
+    // その結果のEIP-681 URI（`uint256=0`）を逆方向に通すと拒否される。
+    let link =
+        format!("https://link.expo2025-wallet.com/pay?to={TO}&master_currency_id=487&amount=0x0");
+    let forward = parse(&link).unwrap();
+    assert_eq!(forward.amount, Some(U256::ZERO));
+    let uri = forward.to_eip681();
+    assert!(uri.ends_with("&uint256=0"), "{uri}");
+    assert!(matches!(
+        parse_eip681(&uri),
+        Err(ParseError::InvalidAmount { reason, .. }) if reason.contains(ZERO_REASON)
+    ));
+}
+
+#[test]
+fn amount_leading_zeros_rejected() {
+    // 先頭ゼロの数値を8進として読むパーサーがあり、解釈が割れうるため
+    // （チェーンIDと同じ方針）。整数部・指数とも2桁以上での先頭ゼロを拒否する。
+    for bad in [
+        "01",
+        "007",
+        "00",
+        "000",
+        "00.5e1",
+        "0100",
+        "+01",
+        "01e18",
+        "00.0",
+        "1e018",
+        "1e00",
+        "1e01",
+        "1.5e01",
+        ".5e01",
+        "1e000018",
+        // 値が0でも、先頭ゼロの構文エラーが先に報告される。
+        "0e00",
+        "0e099999999999999999999",
+    ] {
+        assert_invalid_amount_because(bad, LEADING_ZERO_REASON);
+    }
+    // `%2B` でエンコードされた `+` も同様（エラーの `value` はデコード後の値）。
+    assert!(matches!(
+        amount_of("%2B01"),
+        Err(ParseError::InvalidAmount { value, reason })
+            if value == "+01" && reason.contains(LEADING_ZERO_REASON)
+    ));
+}
+
+#[test]
+fn amount_single_zero_integer_part_accepted() {
+    // 整数部が単独の `0` の場合は先頭ゼロに当たらない。
+    assert_eq!(amount_of("0.5e1").unwrap(), Some(U256::from(5)));
+    assert_eq!(amount_of("0.05e2").unwrap(), Some(U256::from(5)));
+    // 整数部の省略も従来どおり可。
+    assert_eq!(amount_of(".5e1").unwrap(), Some(U256::from(5)));
+    // 指数が単独の `0` も可。
+    assert_eq!(amount_of("1e0").unwrap(), Some(U256::from(1)));
+    // 小数部の先頭・末尾ゼロは対象外。
+    assert_eq!(amount_of("1.50e1").unwrap(), Some(U256::from(15)));
+    assert_eq!(amount_of("1.05e2").unwrap(), Some(U256::from(105)));
 }
 
 #[test]
@@ -552,10 +669,9 @@ fn amount_scientific_notation() {
     assert_eq!(amount_of("0.05e2").unwrap(), Some(U256::from(5)));
     assert_eq!(amount_of("5.0").unwrap(), Some(U256::from(5)));
     assert_eq!(amount_of("1000e0").unwrap(), Some(U256::from(1000)));
-    assert_eq!(
-        amount_of("1e000018").unwrap(),
-        Some(u256("1000000000000000000"))
-    );
+    // 以前は指数の先頭ゼロ（`1e000018`）も受け付けていたが、整数部と同じく
+    // 8進との誤読を避けるため拒否するようにした。
+    assert_invalid_amount_because("1e000018", LEADING_ZERO_REASON);
 }
 
 #[test]
@@ -640,15 +756,18 @@ fn amount_huge_exponent_rejected_quickly() {
 }
 
 #[test]
-fn amount_zero_mantissa_with_huge_exponent_is_zero() {
-    assert_eq!(
-        amount_of("0e99999999999999999999").unwrap(),
-        Some(U256::ZERO)
-    );
-    assert_eq!(
-        amount_of("0.000e99999999999999999999").unwrap(),
-        Some(U256::ZERO)
-    );
+fn amount_zero_mantissa_with_huge_exponent_rejected_quickly() {
+    // 以前は指数に関係なく金額0として受け付けていたが、値0は拒否するように
+    // した。指数を評価する前に0と判定するので、巨大な指数でも即座に終わる。
+    let start = Instant::now();
+    assert_invalid_amount_because("0e99999999999999999999", ZERO_REASON);
+    assert_invalid_amount_because("0.000e99999999999999999999", ZERO_REASON);
+    // 指数が1e20桁（u64を大きく超える）でも同様。
+    let huge_exp = format!("0e{}", "9".repeat(100_000));
+    assert_invalid_amount_because(&huge_exp, ZERO_REASON);
+    let huge_exp = format!(".0e1{}", "0".repeat(100_000));
+    assert_invalid_amount_because(&huge_exp, ZERO_REASON);
+    assert!(start.elapsed() < Duration::from_secs(2));
 }
 
 #[test]
@@ -660,9 +779,18 @@ fn amount_many_digits_bounded() {
     assert_eq!(big.len(), 10_000);
     assert_invalid_amount(&big);
 
-    // 先頭ゼロが大量にあっても値自体が小さければ受け付ける。
+    // 10,000桁でも、値がU256に収まる整数なら受け付ける。
+    let long_exact = format!("1.{}e18", "0".repeat(9_998));
+    assert_eq!(long_exact.len(), 10_003);
+    assert_eq!(
+        amount_of(&long_exact).unwrap(),
+        Some(u256("1000000000000000000"))
+    );
+
+    // 以前は先頭ゼロが大量にあっても値が小さければ受け付けていたが、
+    // 先頭ゼロは拒否するようにした（`amount_leading_zeros_rejected` を参照）。
     let padded = format!("{}42", "0".repeat(9_998));
-    assert_eq!(amount_of(&padded).unwrap(), Some(U256::from(42)));
+    assert_invalid_amount_because(&padded, LEADING_ZERO_REASON);
 
     // 小数部が長く、指数で打ち消されて整数になるもの（1e9999 / 1e9999 = 1）。
     let long_frac = format!("0.{}1e10000", "0".repeat(9_999));
@@ -675,6 +803,36 @@ fn amount_many_digits_bounded() {
     // 整数にならない長い小数。
     let non_int = format!("1.{}1", "0".repeat(9_998));
     assert_invalid_amount(&non_int);
+
+    assert!(start.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn amount_megabyte_of_zeros_bounded() {
+    const MB: usize = 1 << 20;
+    let zeros = "0".repeat(MB);
+    let start = Instant::now();
+
+    // 整数部が1MBのゼロ: 先頭ゼロとして拒否。
+    assert_invalid_amount_because(&zeros, LEADING_ZERO_REASON);
+    // 小数部が1MBのゼロ: 値0として拒否（指数が巨大でも同じ）。
+    assert_invalid_amount_because(&format!("0.{zeros}"), ZERO_REASON);
+    assert_invalid_amount_because(&format!(".{zeros}"), ZERO_REASON);
+    assert_invalid_amount_because(&format!("0.{zeros}e99999999999999999999"), ZERO_REASON);
+    // 指数が1MBの桁（先頭ゼロ）: 拒否。
+    assert_invalid_amount_because(&format!("1e{zeros}"), LEADING_ZERO_REASON);
+    // 指数が1MBの桁（先頭ゼロなし）: u64を超えるので大きすぎるとして拒否。
+    assert_invalid_amount_because(&format!("1e1{zeros}"), "does not fit");
+    // 小数部の1MBのゼロが指数で打ち消されて整数になるもの: 受け付ける。
+    assert_eq!(
+        amount_of(&format!("0.{zeros}1e{}", MB + 1)).unwrap(),
+        Some(U256::from(1))
+    );
+    // 小数部の末尾に1MBのゼロ: 整数として受け付ける。
+    assert_eq!(
+        amount_of(&format!("7.{zeros}")).unwrap(),
+        Some(U256::from(7))
+    );
 
     assert!(start.elapsed() < Duration::from_secs(2));
 }

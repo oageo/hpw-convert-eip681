@@ -49,9 +49,18 @@
 //!    変えないため）。`value` はネイティブ通貨を同時に送る指定であり、
 //!    捨てると支払いの意味が変わるため `UnsupportedParam`。その他の未知の
 //!    キーも、意味を黙って捨てないよう `UnsupportedParam`。
-//! 8. 受取人アドレス（`address=`）: 4. と同じ規則。
-//! 9. 金額（`uint256=`）: 後述の [`parse_amount_decimal`] を参照。
-//!    省略時は `amount: None`。
+//! 8. 受取人アドレス（`address=`）: 4. と同じ規則。加えて、ゼロアドレスと
+//!    対応トークンのコントラクト自身は `UnsafeRecipient` とする（送金が
+//!    失敗するか資金が永久に失われるだけで正当な用途がないため）。金額の
+//!    検査（9.）より先に行う。
+//! 9. 金額（`uint256=`）: EIP-681の数値文法の部分集合
+//!    `["+"] ("0" / NZDIGIT *DIGIT) ["." 1*DIGIT] [("e"/"E") ("0" / NZDIGIT *DIGIT)]`
+//!    （整数部は省略して `.5e1` としてもよい）で、値が1以上かつU256に収まる
+//!    整数のみ受け付け、違反は `InvalidAmount`。整数部・指数の先頭ゼロ
+//!    （`01`、`1e018`）は5. と同じく8進との誤読を避けるため拒否。値0は、
+//!    0の送金でも `Transfer` イベントが出て入金と誤認されうるため拒否
+//!    （金額未指定なら `uint256` を省略する）。詳細は後述の
+//!    [`parse_amount_decimal`] を参照。省略時は `amount: None`。
 //!
 //! どのような入力に対してもパニックしない。
 
@@ -138,6 +147,7 @@ pub fn parse_eip681(input: &str) -> Result<ParsedLink, ParseError> {
         .address
         .ok_or(ParseError::MissingParam { name: "address" })?;
     let to = address::parse_address_eip55_if_mixed(&to_raw)?;
+    address::check_recipient(to)?;
 
     // 9. 金額
     let amount = params
@@ -304,25 +314,47 @@ fn percent_decode_strict(raw: &str) -> Result<String, ParseError> {
 /// number = [ "-" / "+" ] *DIGIT [ "." 1*DIGIT ] [ ( "e" / "E" ) [ 1*DIGIT ] ]
 /// ```
 ///
-/// 上記のうち実際に受け付けるのは次の部分集合:
+/// 上記のうち実際に受け付けるのは次の部分集合（`NZDIGIT` = `1`〜`9`）:
+///
+/// ```text
+/// amount   = [ "+" ] mantissa [ ( "e" / "E" ) exponent ]
+/// mantissa = integer [ "." 1*DIGIT ] / "." 1*DIGIT
+/// integer  = "0" / NZDIGIT *DIGIT
+/// exponent = "0" / NZDIGIT *DIGIT
+/// ```
+///
+/// さらに値は 1 以上かつU256に収まる整数でなければならない。各規則の詳細:
 ///
 /// - 先頭の `+` は許可、`-` は負数なので拒否。
 /// - 仮数部（整数部と小数部の合計）に少なくとも1桁の数字が必要（`+`、`e18`、
 ///   `.e1` は拒否）。整数部は空でもよい（`.5e1` = 5）。
+/// - 整数部・指数とも、2桁以上なら先頭ゼロを拒否する（`01`、`007`、`00.5e1`、
+///   `1e018`、`1e00` は拒否。`0.5e1` = 5 や `1e0` = 1 のような単独の `0` は可）。
+///   チェーンIDと同じ方針で、先頭ゼロの数値を8進として読むパーサーがあり、
+///   ウォレットごとに解釈が割れうるため。小数部の桁は対象外（`1.50e1` = 15）。
 /// - `.` の後には1桁以上の数字が必要（`1.` は拒否）。
 /// - `e`/`E` の後には1桁以上の数字が必要（`1e` は拒否。文法上は許されるが
 ///   意味が曖昧なため）。指数の符号（`e-1`、`e+1`）は文法にないため拒否。
 /// - `0x10` 等の16進は文法外として拒否する（決して16進として再解釈しない）。
-/// - 結果はU256に収まる非負の整数でなければならない（`2.014e18` は可、
+/// - 結果はU256に収まる1以上の整数でなければならない（`2.014e18` は可、
 ///   `1.5` は整数にならないので拒否）。
+/// - 値が0になるもの（`0`、`+0`、`0.0`、`.0`、`0e5`、
+///   `0e99999999999999999999` など）は拒否する。0のERC-20送金もオンチェーンでは
+///   成功して `Transfer` イベントを発行するため、イベントを監視する受取側の
+///   システムが入金と誤認しうる。金額未指定を意図するなら `uint256` 自体を
+///   省略すべきである。なお順方向（HashPortリンクの `amount=0x0`）は従来どおり
+///   受け付ける。
 /// - 空文字列は拒否する。ruintの `from_str_radix` は空文字列に `Ok(0)` を
 ///   返すため、ここで明示的に弾かないと金額0として通ってしまう。
+///
+/// 検査順は、構文（先頭ゼロを含む）→ 0の判定 → 整数性・U256範囲の判定。
 ///
 /// DoS対策: 攻撃者が指定した巨大な指数で10^expを計算することは決してしない。
 /// 仮数の有効数字（先頭・末尾のゼロを除いた桁）と実効指数だけを見て、
 /// 結果の桁数がU256の最大桁数を超えるかどうかを先に判定するため、
 /// `1e99999999999999999999` や数千桁の入力でも入力長に線形な時間で終わる。
-/// 仮数がゼロなら指数に関係なく0（`0e99999999999999999999` = 0）。
+/// 仮数がゼロなら指数を評価する前に0として拒否する
+/// （`0e99999999999999999999` も即座に弾かれる）。
 fn parse_amount_decimal(raw: &str) -> Result<U256, ParseError> {
     let err = |reason: &str| ParseError::InvalidAmount {
         value: raw.to_string(),
@@ -372,19 +404,33 @@ fn parse_amount_decimal(raw: &str) -> Result<U256, ParseError> {
         return Err(err("unexpected character in decimal number"));
     }
 
+    // 整数部・指数の先頭ゼロ（2桁以上で `0` 始まり）を拒否する。単独の `0` は可。
+    // 8進として読むパーサーとの解釈の食い違いを避けるため（チェーンIDと同じ方針）。
+    let has_leading_zero = |d: &str| d.len() > 1 && d.starts_with('0');
+    if has_leading_zero(int_digits) || exp_digits.is_some_and(has_leading_zero) {
+        return Err(err("leading zeros are not allowed"));
+    }
+
     // --- 値の計算 ---
     // 仮数の全桁 = 整数部 ++ 小数部。値 = 仮数 × 10^(指数 - 小数部の桁数)。
-    // 先頭のゼロを除いた有効数字が空なら、指数に関係なく値は0。
-    let significant_start = |d: &str| d.bytes().take_while(|&b| b == b'0').count();
-    let int_sig = &int_digits[significant_start(int_digits)..];
+    // 先頭ゼロは上で拒否済みなので、整数部は空・単独の `0`・非ゼロ始まりの
+    // いずれか。単独の `0` は有効数字を持たない。
+    let int_sig = if int_digits == "0" { "" } else { int_digits };
     let (digits_head, digits_tail) = if int_sig.is_empty() {
-        // 整数部がすべてゼロなら、小数部の先頭ゼロも有効数字ではない。
-        ("", &frac_digits[significant_start(frac_digits)..])
+        // 整数部が空か `0` なら、小数部の先頭ゼロも有効数字ではない。
+        let frac_zeros = frac_digits.bytes().take_while(|&b| b == b'0').count();
+        ("", &frac_digits[frac_zeros..])
     } else {
         (int_sig, frac_digits)
     };
+    // 有効数字が空なら、指数に関係なく値は0。指数を評価する前に拒否するので、
+    // `0e99999999999999999999` のような入力も入力長に線形な時間で弾かれる。
+    // 0のERC-20送金も成功して `Transfer` イベントを発行し、受取側が入金と
+    // 誤認しうるため、金額未指定なら `uint256` 自体を省略させる。
     if digits_head.is_empty() && digits_tail.is_empty() {
-        return Ok(U256::ZERO);
+        return Err(err(
+            "amount must be greater than zero (omit uint256 for an unspecified amount)",
+        ));
     }
 
     // 末尾のゼロを取り除き、その分を指数に繰り入れる。こうすると
@@ -404,19 +450,17 @@ fn parse_amount_decimal(raw: &str) -> Result<U256, ParseError> {
     };
     let significant_len = head.len() + tail.len();
 
-    // 指数を有界に評価する。先頭ゼロを除いて20桁を超える（u64を超える）
-    // 指数は、入力長（≤ isize::MAX）に由来する小数部の桁数をどう差し引いても
-    // U256の桁数を大きく超えるため、値を計算せずに「大きすぎる」とする。
+    // 指数を有界に評価する。指数は空でなく先頭ゼロもない（検査済み）ので、
+    // `parse` が失敗するのはu64を超える場合のみ。そのような指数は、
+    // 入力長（≤ isize::MAX）に由来する小数部の桁数をどう差し引いても
+    // U256の桁数を大きく超え、かつ仮数は非ゼロと確認済みなので、
+    // 値を計算せずに「大きすぎる」とする。
     let exponent: i128 = match exp_digits {
         None => 0,
-        Some(e) => {
-            let e = &e[significant_start(e)..];
-            match e.parse::<u64>() {
-                Ok(v) => i128::from(v),
-                Err(_) if e.is_empty() => 0,
-                Err(_) => return Err(err("amount does not fit in uint256")),
-            }
-        }
+        Some(e) => match e.parse::<u64>() {
+            Ok(v) => i128::from(v),
+            Err(_) => return Err(err("amount does not fit in uint256")),
+        },
     };
     // usize → i128 は64ビット環境でも損失なく変換できる。
     let to_i128 = |n: usize| i128::try_from(n).unwrap_or(i128::MAX);
